@@ -14,9 +14,10 @@ struct ContentView: View {
     @State private var files: [FileItem] = []
     @State private var showingFolderPicker = false
     @State private var errorMessage: String?
-    @State private var directoryAccess: NSObject? 
+    @State private var directoryAccess: NSObject?
     @State private var sortOption: SortOption = .alphabetical
     @State private var swipeAction: SwipeAction? = nil
+    @State private var keyboardMonitor: Any?
     
     enum SwipeAction {
         case delete
@@ -38,7 +39,7 @@ struct ContentView: View {
                     )
                     .padding(.top, 8)
                 
-                Text("Swipe left to delete • Swipe right to keep")
+                Text("Swipe left to delete (or press ←) • Swipe right to keep (or press →)")
                     .font(.system(size: 14, weight: .medium))
                     .foregroundColor(.secondary)
             }
@@ -105,7 +106,7 @@ struct ContentView: View {
                         }
                         .pickerStyle(.segmented)
                         .padding(.horizontal, 40)
-                        .onChange(of: sortOption) { _ in
+                        .onChange(of: sortOption) {
                             sortFiles()
                         }
                     }
@@ -149,20 +150,11 @@ struct ContentView: View {
                 endPoint: .bottom
             )
         }
-        .focusable()
-        .onKeyPress { keyPress in
-            guard !files.isEmpty, let currentFile = files.first else { return .ignored }
-            
-            switch keyPress.key {
-            case .leftArrow:
-                swipeAction = .delete
-                return .handled
-            case .rightArrow:
-                swipeAction = .keep
-                return .handled
-            default:
-                return .ignored
-            }
+        .onAppear {
+            setupKeyboardMonitoring()
+        }
+        .onDisappear {
+            removeKeyboardMonitoring()
         }
     }
     
@@ -262,7 +254,7 @@ struct ContentView: View {
             
             // Move to Trash
             var resultingURL: NSURL?
-            try fileManager.trashItem(at: file.url, resultingItemURL: AutoreleasingUnsafeMutablePointer<NSURL?>(&resultingURL))
+            try fileManager.trashItem(at: file.url, resultingItemURL: &resultingURL)
             print("Moved to Trash: \(file.name)")
         } catch {
             errorMessage = "Failed to move \(file.name) to Trash: \(error.localizedDescription)"
@@ -278,6 +270,32 @@ struct ContentView: View {
     func keepFile(_ file: FileItem) {
         files.removeAll { $0.id == file.id }
         print("Kept: \(file.name)")
+    }
+    
+    // Setup keyboard monitoring without focus ring
+    func setupKeyboardMonitoring() {
+        keyboardMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { event in
+            guard !files.isEmpty, let _ = files.first else { return event }
+            
+            switch event.keyCode {
+            case 123: // Left arrow
+                swipeAction = .delete
+                return nil // Consume the event
+            case 124: // Right arrow
+                swipeAction = .keep
+                return nil // Consume the event
+            default:
+                return event
+            }
+        }
+    }
+    
+    // Remove keyboard monitoring
+    func removeKeyboardMonitoring() {
+        if let monitor = keyboardMonitor {
+            NSEvent.removeMonitor(monitor)
+            keyboardMonitor = nil
+        }
     }
 }
 
@@ -417,8 +435,8 @@ struct SwipeableFileCard: View {
                         handleSwipe()
                     }
             )
-            .onChange(of: swipeAction) { action in
-                if let action = action {
+            .onChange(of: swipeAction) {
+                if let action = swipeAction {
                     performKeyboardSwipe(action: action)
                     // Reset the binding
                     DispatchQueue.main.async {
@@ -696,4 +714,3 @@ struct VideoPreviewView: NSViewRepresentable {
 #Preview {
     ContentView()
 }
-
