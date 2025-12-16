@@ -2,6 +2,10 @@
 
 A macOS app to help manage files by swiping left to delete and right to keep.
 
+<img width="727" height="862" alt="Screenshot 2025-12-15 at 10 44 18 PM" src="https://github.com/user-attachments/assets/df60e523-e8b6-4a73-a5d2-c37e851b84f9" />
+<img width="720" height="858" alt="Screenshot 2025-12-15 at 10 45 29 PM" src="https://github.com/user-attachments/assets/02b871de-c33d-41fc-a3c9-074bef35cf1b" />
+
+
 ## Setup
 
 1. **Open in Xcode:**
