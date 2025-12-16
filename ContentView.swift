@@ -16,6 +16,12 @@ struct ContentView: View {
     @State private var errorMessage: String?
     @State private var directoryAccess: NSObject? 
     @State private var sortOption: SortOption = .alphabetical
+    @State private var swipeAction: SwipeAction? = nil
+    
+    enum SwipeAction {
+        case delete
+        case keep
+    }
     
     var body: some View {
         VStack(spacing: 24) {
@@ -122,7 +128,8 @@ struct ContentView: View {
                 SwipeableFileCard(
                     file: currentFile,
                     onDelete: { deleteFile(currentFile) },
-                    onKeep: { keepFile(currentFile) }
+                    onKeep: { keepFile(currentFile) },
+                    swipeAction: $swipeAction
                 )
                 .padding(.top, 12)
             }
@@ -141,6 +148,21 @@ struct ContentView: View {
                 startPoint: .top,
                 endPoint: .bottom
             )
+        }
+        .focusable()
+        .onKeyPress { keyPress in
+            guard !files.isEmpty, let currentFile = files.first else { return .ignored }
+            
+            switch keyPress.key {
+            case .leftArrow:
+                swipeAction = .delete
+                return .handled
+            case .rightArrow:
+                swipeAction = .keep
+                return .handled
+            default:
+                return .ignored
+            }
         }
     }
     
@@ -274,6 +296,7 @@ struct SwipeableFileCard: View {
     let file: FileItem
     let onDelete: () -> Void
     let onKeep: () -> Void
+    @Binding var swipeAction: ContentView.SwipeAction?
     
     @State private var dragOffset: CGFloat = 0
     private let deleteThreshold: CGFloat = -150
@@ -391,29 +414,18 @@ struct SwipeableFileCard: View {
                         dragOffset = value.translation.width
                     }
                     .onEnded { _ in
-                        if dragOffset < deleteThreshold {
-                            withAnimation {
-                                dragOffset = -600
-                            }
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
-                                onDelete()
-                                dragOffset = 0
-                            }
-                        } else if dragOffset > keepThreshold {
-                            withAnimation {
-                                dragOffset = 600
-                            }
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
-                                onKeep()
-                                dragOffset = 0
-                            }
-                        } else {
-                            withAnimation(.spring()) {
-                                dragOffset = 0
-                            }
-                        }
+                        handleSwipe()
                     }
             )
+            .onChange(of: swipeAction) { action in
+                if let action = action {
+                    performKeyboardSwipe(action: action)
+                    // Reset the binding
+                    DispatchQueue.main.async {
+                        swipeAction = nil
+                    }
+                }
+            }
         }
         .frame(height: 580)
         .padding(.horizontal, 32)
@@ -424,6 +436,50 @@ struct SwipeableFileCard: View {
         formatter.allowedUnits = [.useKB, .useMB, .useGB]
         formatter.countStyle = .file
         return formatter.string(fromByteCount: bytes)
+    }
+    
+    // Handle swipe from drag gesture
+    private func handleSwipe() {
+        if dragOffset < deleteThreshold {
+            performSwipeAnimation(direction: .delete)
+        } else if dragOffset > keepThreshold {
+            performSwipeAnimation(direction: .keep)
+        } else {
+            withAnimation(.spring()) {
+                dragOffset = 0
+            }
+        }
+    }
+    
+    // Perform swipe animation (used by both drag and keyboard)
+    private func performSwipeAnimation(direction: ContentView.SwipeAction) {
+        let targetOffset: CGFloat = direction == .delete ? -800 : 800
+        
+        withAnimation(.easeOut(duration: 0.3)) {
+            dragOffset = targetOffset
+        }
+        
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            if direction == .delete {
+                onDelete()
+            } else {
+                onKeep()
+            }
+            dragOffset = 0
+        }
+    }
+    
+    // Handle keyboard-triggered swipe
+    private func performKeyboardSwipe(action: ContentView.SwipeAction) {
+        // Show the background indicator briefly
+        let previewOffset: CGFloat = action == .delete ? -100 : 100
+        withAnimation(.easeInOut(duration: 0.15)) {
+            dragOffset = previewOffset
+        }
+        
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+            performSwipeAnimation(direction: action)
+        }
     }
 
     // MARK: - Preview helpers
