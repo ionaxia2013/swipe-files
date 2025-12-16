@@ -36,15 +36,3 @@ A macOS app to help manage files by swiping left to delete and right to keep.
 4. **Run the app:**
    - Press ⌘R or click the Play button
    - The app window should open
-
-## Current Status
-
-- ✅ Basic app structure
-- ⏳ File browser (coming next)
-- ⏳ Swipe gestures
-- ⏳ File deletion
-
-## Next Steps
-
-We'll build this step by step, starting with the ability to browse and display files.
-

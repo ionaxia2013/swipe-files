@@ -1,5 +1,6 @@
 import SwiftUI
 import UniformTypeIdentifiers
+import PDFKit
 
 struct ContentView: View {
     @State private var selectedDirectory: URL?
@@ -61,34 +62,23 @@ struct ContentView: View {
                     .padding()
             }
             
-            // File list
+            // Single file view (one at a time)
             if files.isEmpty && selectedDirectory != nil && errorMessage == nil {
                 Text("No files found in this folder")
                     .foregroundColor(.secondary)
                     .padding()
-            } else if !files.isEmpty {
-                ScrollView {
-                    VStack(spacing: 8) {
-                        ForEach(files) { file in
-                            SwipeableFileRow(
-                                file: file,
-                                onDelete: {
-                                    deleteFile(file)
-                                },
-                                onKeep: {
-                                    keepFile(file)
-                                }
-                            )
-                        }
-                    }
-                    .padding(.horizontal)
-                }
-                .frame(maxHeight: 400)
+            } else if let currentFile = files.first {
+                SwipeableFileCard(
+                    file: currentFile,
+                    onDelete: { deleteFile(currentFile) },
+                    onKeep: { keepFile(currentFile) }
+                )
+                .padding(.top, 12)
             }
             
             Spacer()
         }
-        .frame(width: 600, height: 600)
+        .frame(width: 700, height: 820)
         .padding()
     }
     
@@ -199,42 +189,37 @@ struct FileItem: Identifiable {
     let size: Int64
 }
 
-// Swipeable file row component
-struct SwipeableFileRow: View {
+// Single card for one-file-at-a-time swiping
+struct SwipeableFileCard: View {
     let file: FileItem
     let onDelete: () -> Void
     let onKeep: () -> Void
     
     @State private var dragOffset: CGFloat = 0
-    @State private var isDragging = false
-    
-    private let swipeThreshold: CGFloat = 100
     private let deleteThreshold: CGFloat = -150
     private let keepThreshold: CGFloat = 150
     
     var body: some View {
         ZStack {
-            // Background colors that show when swiping
+            // Background indicators
             HStack {
                 Spacer()
                 if dragOffset < -50 {
-                    // Red background for delete (swipe left)
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(Color.red.opacity(0.3))
+                    RoundedRectangle(cornerRadius: 16)
+                        .fill(Color.red.opacity(0.25))
                         .overlay(
                             HStack {
                                 Image(systemName: "trash.fill")
                                     .foregroundColor(.red)
-                                    .font(.title2)
+                                    .font(.title)
                                 Text("Delete")
                                     .foregroundColor(.red)
                                     .fontWeight(.bold)
                             }
                         )
                 } else if dragOffset > 50 {
-                    // Green background for keep (swipe right)
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(Color.green.opacity(0.3))
+                    RoundedRectangle(cornerRadius: 16)
+                        .fill(Color.green.opacity(0.25))
                         .overlay(
                             HStack {
                                 Text("Keep")
@@ -242,59 +227,91 @@ struct SwipeableFileRow: View {
                                     .fontWeight(.bold)
                                 Image(systemName: "checkmark.circle.fill")
                                     .foregroundColor(.green)
-                                    .font(.title2)
+                                    .font(.title)
                             }
                         )
                 }
             }
             
-            // File row content
-            HStack {
+            // Card content
+            VStack(spacing: 12) {
+                // Icon + name
                 Image(systemName: file.isDirectory ? "folder.fill" : "doc.fill")
                     .foregroundColor(file.isDirectory ? .blue : .gray)
-                    .frame(width: 30)
+                    .font(.largeTitle)
                 
                 Text(file.name)
-                    .lineLimit(1)
-                
-                Spacer()
+                    .font(.title3)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+                    .truncationMode(.middle)
                 
                 Text(formatFileSize(file.size))
                     .foregroundColor(.secondary)
-                    .font(.caption)
+                    .font(.subheadline)
+                
+                // Preview area
+                if let image = loadImagePreview() {
+                    // Image preview (large)
+                    Image(nsImage: image)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(maxHeight: 520)
+                        .cornerRadius(12)
+                } else if isPDFFile() {
+                    // PDF preview (large)
+                    PDFPreviewView(url: file.url)
+                        .frame(maxHeight: 520)
+                        .cornerRadius(12)
+                } else if let text = loadTextPreview() {
+                    // Text preview (first lines)
+                    ScrollView {
+                        Text(text)
+                            .font(.system(size: 12, design: .monospaced))
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .frame(maxHeight: 140)
+                    .background(Color(NSColor.textBackgroundColor))
+                    .cornerRadius(8)
+                }
+
+                // Open in default app
+                Button {
+                    openInDefaultApp()
+                } label: {
+                    Label("Open in Default App", systemImage: "arrow.up.right.square")
+                }
+                .buttonStyle(.bordered)
             }
-            .padding()
+            .padding(24)
+            .frame(maxWidth: .infinity)
             .background(Color(NSColor.controlBackgroundColor))
-            .cornerRadius(8)
+            .cornerRadius(16)
+            .shadow(radius: 6, y: 2)
             .offset(x: dragOffset)
             .gesture(
                 DragGesture()
                     .onChanged { value in
-                        isDragging = true
                         dragOffset = value.translation.width
                     }
-                    .onEnded { value in
-                        isDragging = false
-                        
-                        // Check if swipe was far enough
+                    .onEnded { _ in
                         if dragOffset < deleteThreshold {
-                            // Swipe left - delete
                             withAnimation {
-                                dragOffset = -500
+                                dragOffset = -600
                             }
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
                                 onDelete()
+                                dragOffset = 0
                             }
                         } else if dragOffset > keepThreshold {
-                            // Swipe right - keep
                             withAnimation {
-                                dragOffset = 500
+                                dragOffset = 600
                             }
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
                                 onKeep()
+                                dragOffset = 0
                             }
                         } else {
-                            // Not far enough - snap back
                             withAnimation(.spring()) {
                                 dragOffset = 0
                             }
@@ -302,14 +319,87 @@ struct SwipeableFileRow: View {
                     }
             )
         }
-        .frame(height: 60)
+        .frame(height: 580)
+        .padding(.horizontal, 32)
     }
     
-    func formatFileSize(_ bytes: Int64) -> String {
+    private func formatFileSize(_ bytes: Int64) -> String {
         let formatter = ByteCountFormatter()
         formatter.allowedUnits = [.useKB, .useMB, .useGB]
         formatter.countStyle = .file
         return formatter.string(fromByteCount: bytes)
+    }
+
+    // MARK: - Preview helpers
+    
+    // Simple image type check
+    private func isImageFile() -> Bool {
+        let ext = file.url.pathExtension.lowercased()
+        return ["png", "jpg", "jpeg", "gif", "heic", "tiff", "bmp", "webp"].contains(ext)
+    }
+    
+    // Simple text type check
+    private func isTextFile() -> Bool {
+        let ext = file.url.pathExtension.lowercased()
+        return ["txt", "md", "json", "csv", "log", "xml", "html", "swift", "py", "js", "ts"].contains(ext)
+    }
+    
+    private func isPDFFile() -> Bool {
+        file.url.pathExtension.lowercased() == "pdf"
+    }
+    
+    private func loadImagePreview() -> NSImage? {
+        guard !file.isDirectory, isImageFile() else { return nil }
+        return NSImage(contentsOf: file.url)
+    }
+    
+    private func loadTextPreview() -> String? {
+        guard !file.isDirectory, isTextFile() else { return nil }
+        do {
+            let content = try String(contentsOf: file.url, encoding: .utf8)
+            // Limit to first ~40 lines / 2KB
+            let lines = content.split(separator: "\n")
+            let previewLines = lines.prefix(40)
+            var preview = previewLines.joined(separator: "\n")
+            if preview.count > 2000 {
+                preview = String(preview.prefix(2000))
+            }
+            if preview.count < content.count {
+                preview += "\n\n… (truncated preview)"
+            }
+            return preview
+        } catch {
+            return nil
+        }
+    }
+
+    private func openInDefaultApp() {
+        // Ensure security-scoped access
+        _ = file.url.startAccessingSecurityScopedResource()
+        NSWorkspace.shared.open(file.url)
+    }
+}
+
+// PDF preview using PDFKit
+struct PDFPreviewView: NSViewRepresentable {
+    let url: URL
+    
+    func makeNSView(context: Context) -> PDFView {
+        let pdfView = PDFView()
+        pdfView.autoScales = true
+        pdfView.displayMode = .singlePage
+        pdfView.displayBox = .cropBox
+        pdfView.backgroundColor = NSColor.clear
+        
+        if let document = PDFDocument(url: url) {
+            pdfView.document = document
+        }
+        
+        return pdfView
+    }
+    
+    func updateNSView(_ nsView: PDFView, context: Context) {
+        // No dynamic updates needed for now
     }
 }
 
